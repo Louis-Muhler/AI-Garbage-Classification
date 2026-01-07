@@ -3,7 +3,7 @@
 This repository contains the source code and documentation for the "Garbage Classification" project, developed within the scope of the **Artificial Intelligence** elective course at **DHBW Stuttgart**.
 
 The objective of this project is to implement and evaluate a Neural Network capable of classifying waste into different recycling categories.
-We use a [pre-labeld dataset](https://www.kaggle.com/datasets/hassnainzaidi/garbage-classification) by Hassnain Zaidi featuring more than 7,500 images.
+We use a [pre-labeld dataset](https://www.kaggle.com/datasets/hassnainzaidi/garbage-classification) by Hassnain Zaidi featuring more than 2,500 images.
 
 ## Authors
 * [Anton Engels](https://github.com/engelsanton)
