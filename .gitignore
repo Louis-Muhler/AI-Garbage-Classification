@@ -1,6 +1,7 @@
 # Data and split results
-data_split/
+data/
 
+data_split/
 # Python bytecode and cache
 **/__pycache__/
 *.pyc
