@@ -10,7 +10,7 @@ DATA_DIR = 'data_split'
 BATCH_SIZE = 32
 LEARNING_RATE = 0.001
 EPOCHS = 50
-IMAGE_SIZE = 128
+IMAGE_SIZE = 224
 MODEL_SAVE_PATH = 'models/baseline_model.pth'
 # ----------------------------------------------
 

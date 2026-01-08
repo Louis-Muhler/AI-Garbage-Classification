@@ -32,12 +32,12 @@ def get_data_loaders(data_dir, batch_size=32, image_size=224):
             #Random scaling and cropping
             transforms.RandomResizedCrop(image_size),
             #Horizontal and vertical flips for symmetry-invariant objects
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomVerticalFlip(p=0.2),
+            transforms.RandomHorizontalFlip(p=0.1),
+            transforms.RandomVerticalFlip(p=0.1),
             #Slight rotations for orientation variety
-            transforms.RandomRotation(15),
+            transforms.RandomRotation(8),
             #Adjust brightness and contrast to handle different lighting
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+            transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]),
