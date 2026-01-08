@@ -9,7 +9,7 @@ from utils import plot_training_history
 DATA_DIR = 'data_split'
 BATCH_SIZE = 32
 LEARNING_RATE = 0.001
-EPOCHS = 10
+EPOCHS = 50
 IMAGE_SIZE = 128
 MODEL_SAVE_PATH = 'models/baseline_model.pth'
 # ----------------------------------------------

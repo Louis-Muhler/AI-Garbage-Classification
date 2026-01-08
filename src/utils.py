@@ -29,14 +29,14 @@ def get_data_loaders(data_dir, batch_size=32, image_size=224):
     
     data_transforms = {
         'train': transforms.Compose([
-            # Strategic point 1: Random scaling and cropping
+            #Random scaling and cropping
             transforms.RandomResizedCrop(image_size),
-            # Strategic point 2: Horizontal and vertical flips for symmetry-invariant objects
+            #Horizontal and vertical flips for symmetry-invariant objects
             transforms.RandomHorizontalFlip(),
             transforms.RandomVerticalFlip(p=0.2),
-            # Strategic point 3: Slight rotations for orientation variety
+            #Slight rotations for orientation variety
             transforms.RandomRotation(15),
-            # Strategic point 4: Adjust brightness and contrast to handle different lighting
+            #Adjust brightness and contrast to handle different lighting
             transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
