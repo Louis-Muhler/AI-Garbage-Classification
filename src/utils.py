@@ -14,9 +14,9 @@ def split_garbage_data(input_dir, output_dir, seed=42):
         splitfolders.ratio(input_dir, output=output_dir, 
                            seed=seed, ratio=(.8, .2), 
                            group_prefix=None, move=False)
-        print(f"✅ Data successfully split into: {output_dir}")
+        print(f"Data successfully split into: {output_dir}")
     else:
-        print("ℹ️ Split folder already exists. Skipping split process.")
+        print("Split folder already exists. Skipping split process.")
 
 def get_data_loaders(data_dir, batch_size=32, image_size=224):
     """
