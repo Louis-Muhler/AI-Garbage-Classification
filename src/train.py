@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from tqdm import tqdm # Useful for progress bars
 
 def train_model(model, loaders, criterion, optimizer, num_epochs, device):
     """
@@ -28,7 +27,7 @@ def train_model(model, loaders, criterion, optimizer, num_epochs, device):
             running_corrects = 0
 
             # Iterate over data using the loaders from utils.py
-            for inputs, labels in tqdm(loaders[phase], desc=f"{phase} phase"):
+            for inputs, labels in loaders[phase]:
                 inputs = inputs.to(device)
                 labels = labels.to(device)
 
@@ -53,9 +52,10 @@ def train_model(model, loaders, criterion, optimizer, num_epochs, device):
             epoch_loss = running_loss / len(loaders[phase].dataset)
             epoch_acc = running_corrects.double() / len(loaders[phase].dataset)
 
-            print(f"{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}")
+            # Print results for the current phase
+            print(f"{phase.capitalize()} Phase - Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}")
             
-            # Save history for documentation
+            # Save history for documentation in the final paper
             if phase == 'train':
                 history['train_loss'].append(epoch_loss)
                 history['train_acc'].append(epoch_acc.item())

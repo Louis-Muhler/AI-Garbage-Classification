@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
-from src.utils import get_data_loaders, save_model
-from src.model import SimpleGarbageCNN
-from src.train import train_model
+from utils import get_data_loaders, save_model
+from model import SimpleGarbageCNN
+from train import train_model
+from utils import plot_training_history
 
 # --- CONFIGURATION (Adjust everything here) ---
-DATA_DIR = 'data/split_data'
+DATA_DIR = 'data_split'
 BATCH_SIZE = 32
 LEARNING_RATE = 0.001
 EPOCHS = 10
@@ -34,8 +35,10 @@ def main():
     trained_model, history = train_model(
         model, loaders, criterion, optimizer, EPOCHS, device
     )
+    # 6. Visualization
+    plot_training_history(history, save_dir='plots')
 
-    # 6. Save final result
+    # 7. Save Model
     save_model(trained_model, MODEL_SAVE_PATH)
     print(f"Model saved to {MODEL_SAVE_PATH}")
 

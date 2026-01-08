@@ -3,6 +3,9 @@ import torch
 import splitfolders
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+import glob
+import re
+import matplotlib.pyplot as plt
 
 def split_garbage_data(input_dir, output_dir, seed=42):
     """
@@ -73,3 +76,50 @@ def load_model(model, path, device):
     """Loads a saved model state dictionary."""
     model.load_state_dict(torch.load(path, map_location=device))
     return model
+
+def plot_training_history(history, save_dir='plots'):
+    """
+    Plots training/validation loss and accuracy.
+    Saves the result as plot[x].png with an incrementing index x.
+    """
+    # Ensure the directory exists
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    # Logic to find the next available index 'x'
+    existing_plots = glob.glob(os.path.join(save_dir, 'plot[*].png'))
+    indices = []
+    for f in existing_plots:
+        match = re.search(r'plot\[(\d+)\]', f)
+        if match:
+            indices.append(int(match.group(1)))
+    
+    next_idx = max(indices) + 1 if indices else 1
+    save_path = os.path.join(save_dir, f'plot[{next_idx}].png')
+
+    # Data for plotting
+    epochs = range(1, len(history['train_loss']) + 1)
+
+    # Plot Loss (Left)
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, history['train_loss'], 'b-', label='Train Loss')
+    plt.plot(epochs, history['val_loss'], 'r-', label='Val Loss')
+    plt.title('Loss over Epochs')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    # Plot Accuracy (Right)
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs, history['train_acc'], 'b-', label='Train Acc')
+    plt.plot(epochs, history['val_acc'], 'r-', label='Val Acc')
+    plt.title('Accuracy over Epochs')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+
+    # Save and close
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
+    print(f"📈 Performance plot saved as: {save_path}")
