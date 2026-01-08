@@ -27,22 +27,20 @@ def get_data_loaders(data_dir, batch_size=32, image_size=224):
     Augmentation helps the model generalize better and reduces overfitting.
     """
     
+    # Check if GPU is available to avoid UserWarnings
+    use_cuda = torch.cuda.is_available()
+
     data_transforms = {
         'train': transforms.Compose([
-            #Random scaling and cropping
             transforms.RandomResizedCrop(image_size),
-            #Horizontal and vertical flips for symmetry-invariant objects
             transforms.RandomHorizontalFlip(p=0.1),
             transforms.RandomVerticalFlip(p=0.1),
-            #Slight rotations for orientation variety
             transforms.RandomRotation(8),
-            #Adjust brightness and contrast to handle different lighting
             transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]),
         'val': transforms.Compose([
-            # Validation data should only be resized and normalized (no random changes)
             transforms.Resize(int(image_size * 1.15)),
             transforms.CenterCrop(image_size),
             transforms.ToTensor(),
@@ -61,8 +59,8 @@ def get_data_loaders(data_dir, batch_size=32, image_size=224):
             batch_size=batch_size, 
             shuffle=True if x == 'train' else False, 
             num_workers=4,
-            pin_memory=True,
-            persistent_workers=True # Optimization to avoid delays between epochs
+            pin_memory=use_cuda, # Only True if GPU is actually used
+            persistent_workers=True 
         )
         for x in ['train', 'val']
     }
@@ -71,8 +69,17 @@ def get_data_loaders(data_dir, batch_size=32, image_size=224):
     return loaders, class_names
 
 def save_model(model, path):
-    """Saves the model state dictionary for final submission."""
+    """
+    Saves the model state dictionary and ensures the directory exists
+    to prevent RuntimeError.
+    """
+    directory = os.path.dirname(path)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory)
+        print(f"Created directory: {directory}")
+        
     torch.save(model.state_dict(), path)
+    print(f"Model successfully saved to: {path}")
 
 def load_model(model, path, device):
     """Loads a saved model state dictionary."""
@@ -84,11 +91,9 @@ def plot_training_history(history, save_dir='plots'):
     Plots training/validation loss and accuracy.
     Saves the result as plot[x].png with an incrementing index x.
     """
-    # Ensure the directory exists
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    # Logic to find the next available index 'x'
     existing_plots = glob.glob(os.path.join(save_dir, 'plot[*].png'))
     indices = []
     for f in existing_plots:
@@ -99,8 +104,9 @@ def plot_training_history(history, save_dir='plots'):
     next_idx = max(indices) + 1 if indices else 1
     save_path = os.path.join(save_dir, f'plot[{next_idx}].png')
 
-    # Data for plotting
     epochs = range(1, len(history['train_loss']) + 1)
+
+    plt.figure(figsize=(12, 5))
 
     # Plot Loss (Left)
     plt.subplot(1, 2, 1)
@@ -120,7 +126,6 @@ def plot_training_history(history, save_dir='plots'):
     plt.ylabel('Accuracy')
     plt.legend()
 
-    # Save and close
     plt.tight_layout()
     plt.savefig(save_path)
     plt.close()
