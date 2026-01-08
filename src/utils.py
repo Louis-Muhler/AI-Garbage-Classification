@@ -58,7 +58,9 @@ def get_data_loaders(data_dir, batch_size=32, image_size=224):
             batch_size=batch_size, 
             shuffle=True if x == 'train' else False, 
             num_workers=4,
-            pin_memory=True if torch.cuda.is_available() else False
+            pin_memory=True if torch.cuda.is_available() else False,
+            persistent_workers=True, # Keeps workers alive between epochs
+            prefetch_factor=2
         )
         for x in ['train', 'val']
     }
