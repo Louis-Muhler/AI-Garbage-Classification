@@ -78,6 +78,11 @@ def main():
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--num_correct', type=int, default=5)
     parser.add_argument('--num_incorrect', type=int, default=5)
+    
+    # New args from colleague's version
+    parser.add_argument('--num_workers', type=int, default=4, help='Number of data loader workers')
+    parser.add_argument('--pin_memory', action='store_true', help='Pin memory for faster data transfer to CUDA')
+    
     parser.add_argument('--checkpoint', default='checkpoint.pth', help='Path to model checkpoint')
     parser.add_argument('--history', default='history.pt', help='Path to training history')
     args = parser.parse_args()
@@ -106,7 +111,14 @@ def main():
         print(f"Starting training for model: {args.model}")
         print(f"Output directory: {model_dir}")
         
-        train_loader, val_loader, test_loader, classes = get_data_loaders(args.data_dir, batch_size=args.batch_size, img_size=args.img_size)
+        # Pass new optimize args
+        train_loader, val_loader, test_loader, classes = get_data_loaders(
+            args.data_dir, 
+            batch_size=args.batch_size, 
+            img_size=args.img_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_memory
+        )
         num_classes = len(classes)
         
         model = get_model(args.model, input_dim, num_classes, img_size=args.img_size).to(device)

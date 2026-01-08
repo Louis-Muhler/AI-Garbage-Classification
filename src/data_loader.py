@@ -1,7 +1,7 @@
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
-def get_data_loaders(data_dir, batch_size=32, img_size=224):
+def get_data_loaders(data_dir, batch_size=32, img_size=224, num_workers=4, pin_memory=False):
     """
     Sets up the data loaders for training, validation, and testing.
     """
@@ -32,8 +32,21 @@ def get_data_loaders(data_dir, batch_size=32, img_size=224):
     }
 
     # 3. Creating the DataLoaders
+    # Optimize data loading with persistent workers and pinning memory if feasible
+    loader_args = {
+        'batch_size': batch_size,
+        'num_workers': num_workers,
+        'pin_memory': pin_memory
+    }
+    
+    # On Windows, persistent_workers can sometimes cause issues or be slow to start, 
+    # but generally good for speed. Only enable if num_workers > 0.
+    if num_workers > 0:
+        loader_args['persistent_workers'] = True
+        loader_args['prefetch_factor'] = 2
+
     loaders = {
-        x: DataLoader(image_datasets[x], batch_size=batch_size, shuffle=(x == 'train'))
+        x: DataLoader(image_datasets[x], shuffle=(x == 'train'), **loader_args)
         for x in ['train', 'val', 'test']
     }
 

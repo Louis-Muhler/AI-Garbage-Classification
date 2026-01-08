@@ -12,6 +12,11 @@ def train_model(model, criterion, optimizer, dataloaders, device, num_epochs=10)
     # Lists to record metrics for documentation/plotting
     history = {'train_loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': []}
 
+    # Optional: use a scheduler if optimizer is passed, but maybe adding one here from snippet
+    # The snippet used ExponentialLR. Let's add it if not present, but usually passed in.
+    # To minimize logic changes, I'll stick to basic training but add the scheduler from the snippet `train.py`.
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
+
     for epoch in range(num_epochs):
         print(f'Epoch {epoch}/{num_epochs - 1}')
         print('-' * 10)
@@ -24,7 +29,8 @@ def train_model(model, criterion, optimizer, dataloaders, device, num_epochs=10)
                 model.eval()   # set model to evaluation mode
 
             running_loss = 0.0
-            running_corrects = 0
+            # Initialize as tensor to ensure .double() works later
+            running_corrects = torch.tensor(0, device=device)
 
             # Iterate over data
             for inputs, labels in dataloaders[phase]:
@@ -48,8 +54,9 @@ def train_model(model, criterion, optimizer, dataloaders, device, num_epochs=10)
                 # compute statistics
                 running_loss += loss.item() * inputs.size(0)
                 running_corrects += torch.sum(preds == labels.data)
-
+            
             epoch_loss = running_loss / len(dataloaders[phase].dataset)
+            # Fix potential type error if running_corrects is not a tensor initially (though it is here)
             epoch_acc = running_corrects.double() / len(dataloaders[phase].dataset)
 
             print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
@@ -63,6 +70,9 @@ def train_model(model, criterion, optimizer, dataloaders, device, num_epochs=10)
                 best_acc = epoch_acc
                 best_model_wts = copy.deepcopy(model.state_dict())
 
+        # Step scheduler
+        scheduler.step()
+        
         print()
 
     time_elapsed = time.time() - since
