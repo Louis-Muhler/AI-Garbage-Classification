@@ -23,51 +23,51 @@ def split_garbage_data(input_dir, output_dir, seed=42):
 
 def get_data_loaders(data_dir, batch_size=32, image_size=224):
     """
-    Creates Training and Validation DataLoaders with efficient multiprocessing.
-    Uses 4 workers as requested to optimize data loading pipeline.
+    Creates Training and Validation DataLoaders with enhanced Data Augmentation.
+    Augmentation helps the model generalize better and reduces overfitting.
     """
     
-    # Define transformations for training and validation
-    # Training includes data augmentation to improve model depth and generalization
     data_transforms = {
         'train': transforms.Compose([
+            # Strategic point 1: Random scaling and cropping
             transforms.RandomResizedCrop(image_size),
+            # Strategic point 2: Horizontal and vertical flips for symmetry-invariant objects
             transforms.RandomHorizontalFlip(),
+            transforms.RandomVerticalFlip(p=0.2),
+            # Strategic point 3: Slight rotations for orientation variety
+            transforms.RandomRotation(15),
+            # Strategic point 4: Adjust brightness and contrast to handle different lighting
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]),
         'val': transforms.Compose([
-            transforms.Resize(256),
+            # Validation data should only be resized and normalized (no random changes)
+            transforms.Resize(int(image_size * 1.15)),
             transforms.CenterCrop(image_size),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]),
     }
 
-    # Load datasets using ImageFolder
     image_datasets = {
         x: datasets.ImageFolder(os.path.join(data_dir, x), data_transforms[x])
         for x in ['train', 'val']
     }
 
-    # Create DataLoaders with 4 workers for parallel CPU processing
-    # pin_memory=True speeds up the data transfer from CPU to GPU
     loaders = {
         x: DataLoader(
             image_datasets[x], 
             batch_size=batch_size, 
             shuffle=True if x == 'train' else False, 
             num_workers=4,
-            pin_memory=True if torch.cuda.is_available() else False,
-            persistent_workers=True, # Keeps workers alive between epochs
-            prefetch_factor=2
+            pin_memory=True,
+            persistent_workers=True # Optimization to avoid delays between epochs
         )
         for x in ['train', 'val']
     }
     
-    # Extract class names for evaluation and documentation in the paper
     class_names = image_datasets['train'].classes
-    
     return loaders, class_names
 
 def save_model(model, path):
