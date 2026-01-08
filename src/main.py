@@ -69,7 +69,7 @@ def load_history(path):
 def main():
     parser = argparse.ArgumentParser(description='Train/evaluate/plot pipeline controller')
     parser.add_argument('--mode', choices=['train', 'plot_history', 'plot_examples', 'eval', 'split'], default='train')
-    parser.add_argument('--model', choices=['logistic', 'linear', 'cnn', 'slim_cnn'], default='slim_cnn')
+    parser.add_argument('--model', choices=['logistic', 'linear', 'cnn', 'slim_cnn', 'resnet18', 'resnet50', 'efficientnet_b0'], default='slim_cnn')
     parser.add_argument('--data_dir', default='data_split')
     parser.add_argument('--input', default='data', help='Input data folder used by split mode')
     parser.add_argument('--batch_size', type=int, default=32)
@@ -83,6 +83,11 @@ def main():
     parser.add_argument('--num_workers', type=int, default=4, help='Number of data loader workers')
     parser.add_argument('--pin_memory', action='store_true', help='Pin memory for faster data transfer to CUDA')
     
+    # Arguments for transfer learning
+    parser.add_argument('--dropout', type=float, default=0.5, help='Dropout rate for transfer learning models')
+    parser.add_argument('--unfreeze', action='store_true', help='Unfreeze backbone layers (default: frozen)')
+    parser.add_argument('--label_smoothing', type=float, default=0.0, help='Label smoothing for CrossEntropyLoss (default: 0.0)')
+
     parser.add_argument('--checkpoint', default='checkpoint.pth', help='Path to model checkpoint')
     parser.add_argument('--history', default='history.pt', help='Path to training history')
     args = parser.parse_args()
@@ -111,6 +116,20 @@ def main():
         print(f"Starting training for model: {args.model}")
         print(f"Output directory: {model_dir}")
         
+        # Check if data_dir exists, if not, try to prepare data
+        if not os.path.exists(args.data_dir):
+            if os.path.exists(args.input):
+                print(f"Data directory '{args.data_dir}' not found. Generating split from '{args.input}'...")
+                # Avoid splitting artifacts (train/val/test folders inside data)
+                # We can't easily filter them unless we clean them up, but we warn:
+                if any(os.path.exists(os.path.join(args.input, x)) for x in ['train', 'val', 'test']):
+                    print("Warning: Input directory contains 'train', 'val', or 'test' folders. "
+                          "This might affect the split. Ensure 'data' only contains class folders.")
+                
+                split_data(args.input, args.data_dir)
+            else:
+                 raise FileNotFoundError(f"Input data directory '{args.input}' not found. Cannot create split.")
+
         # Pass new optimize args
         train_loader, val_loader, test_loader, classes = get_data_loaders(
             args.data_dir, 
@@ -121,9 +140,18 @@ def main():
         )
         num_classes = len(classes)
         
-        model = get_model(args.model, input_dim, num_classes, img_size=args.img_size).to(device)
+        # Pass transfer learning args
+        freeze_backbone = not args.unfreeze
+        model = get_model(
+            args.model, 
+            input_dim, 
+            num_classes, 
+            img_size=args.img_size, 
+            dropout=args.dropout, 
+            freeze_backbone=freeze_backbone
+        ).to(device)
 
-        criterion = nn.CrossEntropyLoss()
+        criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
         optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
         dataloaders = {'train': train_loader, 'val': val_loader}
@@ -168,7 +196,17 @@ def main():
     elif args.mode == 'plot_examples':
         train_loader, val_loader, test_loader, classes = get_data_loaders(args.data_dir, batch_size=args.batch_size, img_size=args.img_size)
         num_classes = len(classes)
-        model = get_model(args.model, input_dim, num_classes, img_size=args.img_size).to(device)
+        
+        # Consistent model creation
+        freeze_backbone = not args.unfreeze
+        model = get_model(
+            args.model, 
+            input_dim, 
+            num_classes, 
+            img_size=args.img_size, 
+            dropout=args.dropout, 
+            freeze_backbone=freeze_backbone
+        ).to(device)
         
         if os.path.exists(args.checkpoint):
             model.load_state_dict(torch.load(args.checkpoint, map_location=device))
@@ -185,7 +223,17 @@ def main():
     elif args.mode == 'eval':
         train_loader, val_loader, test_loader, classes = get_data_loaders(args.data_dir, batch_size=args.batch_size, img_size=args.img_size)
         num_classes = len(classes)
-        model = get_model(args.model, input_dim, num_classes, img_size=args.img_size).to(device)
+        
+        # Consistent model creation
+        freeze_backbone = not args.unfreeze
+        model = get_model(
+            args.model, 
+            input_dim, 
+            num_classes, 
+            img_size=args.img_size, 
+            dropout=args.dropout, 
+            freeze_backbone=freeze_backbone
+        ).to(device)
         
         if os.path.exists(args.checkpoint):
             model.load_state_dict(torch.load(args.checkpoint, map_location=device))

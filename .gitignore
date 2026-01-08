@@ -1,2 +1,3 @@
-data_split/
 src/__pycache__/
+data_split/
+models/
