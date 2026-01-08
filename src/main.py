@@ -7,7 +7,7 @@ from utils import plot_training_history
 
 # --- CONFIGURATION (Adjust everything here) ---
 DATA_DIR = 'data_split'
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 LEARNING_RATE = 0.001
 EPOCHS = 10
 IMAGE_SIZE = 128

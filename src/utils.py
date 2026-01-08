@@ -124,4 +124,4 @@ def plot_training_history(history, save_dir='plots'):
     plt.tight_layout()
     plt.savefig(save_path)
     plt.close()
-    print(f"📈 Performance plot saved as: {save_path}")
+    print(f"Performance plot saved as: {save_path}")

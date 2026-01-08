@@ -1,2 +1,17 @@
+# Data and split results
 data_split/
-src/__pycache__/
+
+# Python bytecode and cache
+**/__pycache__/
+*.pyc
+
+# Model checkpoints and weights
+models/
+
+# Generated plots and visualizations
+plots/
+
+# Local environment (optional, but recommended)
+.venv/
+env/
+venv/
