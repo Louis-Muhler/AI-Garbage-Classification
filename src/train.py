@@ -1,22 +1,23 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import time
 
 def train_model(model, loaders, criterion, optimizer, num_epochs, device):
     """
-    Main training function. All parameters are passed from outside 
-    to maintain flexibility and systematic experimentation.
+    Main training function with time tracking and batch progress logging.
+    All metrics are tracked for the final paper documentation.
     """
+    start_time_total = time.time()
     model.to(device)
     
-    # Dictionary to store history for the paper's diagrams
     history = {'train_loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': []}
 
     for epoch in range(num_epochs):
+        epoch_start_time = time.time()
         print(f"\nEpoch {epoch+1}/{num_epochs}")
-        print("-" * 10)
+        print("-" * 20)
 
-        # Each epoch has a training and validation phase
         for phase in ['train', 'val']:
             if phase == 'train':
                 model.train()
@@ -25,42 +26,52 @@ def train_model(model, loaders, criterion, optimizer, num_epochs, device):
 
             running_loss = 0.0
             running_corrects = 0
+            
+            # For progress calculation
+            num_batches = len(loaders[phase])
+            dataset_size = len(loaders[phase].dataset)
 
-            # Iterate over data using the loaders from utils.py
-            for inputs, labels in loaders[phase]:
+            for i, (inputs, labels) in enumerate(loaders[phase]):
                 inputs = inputs.to(device)
                 labels = labels.to(device)
 
-                # Zero the parameter gradients
                 optimizer.zero_grad()
 
-                # Forward pass
                 with torch.set_grad_enabled(phase == 'train'):
                     outputs = model(inputs)
                     _, preds = torch.max(outputs, 1)
                     loss = criterion(outputs, labels)
 
-                    # Backward pass + optimize only if in training phase
                     if phase == 'train':
                         loss.backward()
                         optimizer.step()
 
-                # Statistics
                 running_loss += loss.item() * inputs.size(0)
                 running_corrects += torch.sum(preds == labels.data)
 
-            epoch_loss = running_loss / len(loaders[phase].dataset)
-            epoch_acc = running_corrects.double() / len(loaders[phase].dataset)
+                # Log every 10 batches
+                if (i + 1) % 10 == 0 or (i + 1) == num_batches:
+                    percent = (i + 1) / num_batches * 100
+                    elapsed = time.time() - epoch_start_time
+                    print(f"{phase.capitalize()} Batch {i+1}/{num_batches} ({percent:.1f}%) - Elapsed: {elapsed:.1f}s")
 
-            # Print results for the current phase
-            print(f"{phase.capitalize()} Phase - Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}")
+            epoch_loss = running_loss / dataset_size
+            epoch_acc = running_corrects.double() / dataset_size
+
+            print(f">>> {phase.capitalize()} Result - Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}")
             
-            # Save history for documentation in the final paper
             if phase == 'train':
                 history['train_loss'].append(epoch_loss)
                 history['train_acc'].append(epoch_acc.item())
             else:
                 history['val_loss'].append(epoch_loss)
                 history['val_acc'].append(epoch_acc.item())
+
+    # Calculate and print total training time
+    total_time = time.time() - start_time_total
+    print(f"\n{'='*20}")
+    print(f"TRAINING COMPLETE")
+    print(f"Total time: {total_time // 60:.0f}m {total_time % 60:.0f}s")
+    print(f"{'='*20}")
 
     return model, history

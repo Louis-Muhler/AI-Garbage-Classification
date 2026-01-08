@@ -7,10 +7,10 @@ from utils import plot_training_history
 
 # --- CONFIGURATION (Adjust everything here) ---
 DATA_DIR = 'data_split'
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 LEARNING_RATE = 0.001
 EPOCHS = 10
-IMAGE_SIZE = 224
+IMAGE_SIZE = 128
 MODEL_SAVE_PATH = 'models/baseline_model.pth'
 # ----------------------------------------------
 
@@ -25,7 +25,7 @@ def main():
     print(f"Classes found: {class_names}")
 
     # 3. Initialize "Plain" CNN
-    model = SimpleGarbageCNN(num_classes=num_classes)
+    model = SimpleGarbageCNN(num_classes=num_classes, input_size=IMAGE_SIZE)
 
     # 4. Define Loss and Optimizer
     criterion = nn.CrossEntropyLoss()
