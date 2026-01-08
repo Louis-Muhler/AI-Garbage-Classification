@@ -57,7 +57,7 @@ def collect_examples(model, loader, num_correct=5, num_incorrect=5, device=None,
     return correct, incorrect
 
 
-def plot_examples(correct, incorrect, classes):
+def plot_examples(correct, incorrect, classes, out_path=None):
     ncol = max(len(correct), len(incorrect), 1)
     fig, axes = plt.subplots(2, ncol, figsize=(4 * ncol, 8))
     if ncol == 1:
@@ -81,7 +81,10 @@ def plot_examples(correct, incorrect, classes):
         ax.axis('off')
 
     plt.tight_layout()
-    plt.show()
+    if out_path:
+        plt.savefig(out_path)
+    # plt.show() # Disable show for automated runs
+    plt.close()
 
 
 
