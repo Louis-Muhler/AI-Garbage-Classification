@@ -1,5 +1,6 @@
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+import os
 
 def get_data_loaders(data_dir, batch_size=32, img_size=224, num_workers=4, pin_memory=False):
     """
@@ -28,8 +29,15 @@ def get_data_loaders(data_dir, batch_size=32, img_size=224, num_workers=4, pin_m
     # 2. Loading the datasets using ImageFolder
     image_datasets = {
         x: datasets.ImageFolder(root=f"{data_dir}/{x}", transform=data_transforms[x])
-        for x in ['train', 'val', 'test']
+        for x in ['train', 'val']
     }
+
+    # Handle optional test split
+    if os.path.exists(f"{data_dir}/test"):
+        image_datasets['test'] = datasets.ImageFolder(root=f"{data_dir}/test", transform=data_transforms['test'])
+        test_exists = True
+    else:
+        test_exists = False
 
     # 3. Creating the DataLoaders
     # Optimize data loading with persistent workers and pinning memory if feasible
@@ -47,9 +55,13 @@ def get_data_loaders(data_dir, batch_size=32, img_size=224, num_workers=4, pin_m
 
     loaders = {
         x: DataLoader(image_datasets[x], shuffle=(x == 'train'), **loader_args)
-        for x in ['train', 'val', 'test']
+        for x in image_datasets
     }
 
     class_names = image_datasets['train'].classes
-    return loaders['train'], loaders['val'], loaders['test'], class_names
+    
+    # If no test set, use validation set as test set placeholder to avoid breakages
+    test_loader = loaders['test'] if test_exists else loaders['val']
+    
+    return loaders['train'], loaders['val'], test_loader, class_names
 
