@@ -1,63 +1,84 @@
 import torch.nn as nn
 import torch.nn.functional as F
 
-class SimpleGarbageCNN(nn.Module):
+class ResidualBlock(nn.Module):
     """
-    Komplexeres Modell mit Batch Normalization, mehr Layern und mehr Neuronen.
-    Ziel: Underfitting vermeiden durch höhere Kapazität.
-    Struktur: 5 Conv-Blöcke (bis 512 Filter), BN, Dropout.
+    Residual Block to help with the 'Vanishing Gradient Problem' in deep networks.
+    Input -> [Conv-BN-ReLU-Conv-BN] + [Shortcut] -> ReLU
     """
-    def __init__(self, num_classes, input_size=224):
-        super(SimpleGarbageCNN, self).__init__()
+    def __init__(self, in_channels, out_channels):
+        super(ResidualBlock, self).__init__()
+        self.conv_block = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels)
+        )
         
-        # Block 1
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(64)
-        
-        # Block 2
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(128)
-        
-        # Block 3
-        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, padding=1)
-        self.bn3 = nn.BatchNorm2d(256)
-        
-        # Block 4
-        self.conv4 = nn.Conv2d(256, 512, kernel_size=3, padding=1)
-        self.bn4 = nn.BatchNorm2d(512)
-        
-        # Block 5 (Neu: Tieferes Netz)
-        self.conv5 = nn.Conv2d(512, 512, kernel_size=3, padding=1)
-        self.bn5 = nn.BatchNorm2d(512)
-        
-        self.pool = nn.MaxPool2d(2, 2)
-        
-        self.dropout = nn.Dropout(0.3)
-        
-        # Berechnung: 5 Poolings -> input_size / 32
-        self.final_spatial_size = input_size // 32 
-        # Falls input_size=224 -> 7x7. Flattened size: 512 channels * 7 * 7
-        self.flattened_size = 512 * self.final_spatial_size * self.final_spatial_size
-        
-        # Größere FC Layer
-        self.fc1 = nn.Linear(self.flattened_size, 1024)
-        self.fc2 = nn.Linear(1024, 512)
-        self.fc3 = nn.Linear(512, num_classes)
+        # Adjust shortcut if dimensions change
+        self.shortcut = nn.Sequential()
+        if in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
 
     def forward(self, x):
-        # Conv -> BN -> ReLU -> Pool
-        x = self.pool(F.relu(self.bn1(self.conv1(x))))
-        x = self.pool(F.relu(self.bn2(self.conv2(x))))
-        x = self.pool(F.relu(self.bn3(self.conv3(x))))
-        x = self.pool(F.relu(self.bn4(self.conv4(x))))
-        x = self.pool(F.relu(self.bn5(self.conv5(x))))
+        out = self.conv_block(x)
+        out += self.shortcut(x) # Skip Connection: Add input to output
+        out = F.relu(out)
+        return out
+
+class SimpleGarbageCNN(nn.Module):
+    """
+    Improved ResNet-Style CNN.
+    Residual connections help deep networks learn efficiently.
+    """
+    def __init__(self, num_classes, input_size=None):
+        super(SimpleGarbageCNN, self).__init__()
         
-        x = x.view(-1, self.flattened_size)
+        # Initial Convolution
+        self.initial = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True)
+        )
+        
+        # ResNet Blocks + Pooling
+        self.block1 = ResidualBlock(32, 64)
+        self.pool1 = nn.MaxPool2d(2, 2)
+        
+        self.block2 = ResidualBlock(64, 128)
+        self.pool2 = nn.MaxPool2d(2, 2)
+        
+        self.block3 = ResidualBlock(128, 256)
+        self.pool3 = nn.MaxPool2d(2, 2)
+        
+        self.block4 = ResidualBlock(256, 512)
+        self.pool4 = nn.MaxPool2d(2, 2)
+        
+        self.block5 = ResidualBlock(512, 512)
+        # No 5th pooling here, GAP handles the rest to keep more spatial info
+        
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
         
         # Classifier
-        x = F.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = F.relu(self.fc2(x))
-        x = self.dropout(x)
-        x = self.fc3(x)
+        self.fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Dropout(0.3), # Dropout slightly increased for ResNet
+            nn.Linear(512, num_classes)
+        )
+
+    def forward(self, x):
+        x = self.initial(x)
+        
+        x = self.pool1(self.block1(x))
+        x = self.pool2(self.block2(x))
+        x = self.pool3(self.block3(x))
+        x = self.pool4(self.block4(x))
+        x = self.block5(x) # Last block without pooling
+        
+        x = self.global_pool(x)
+        x = self.fc(x)
         return x

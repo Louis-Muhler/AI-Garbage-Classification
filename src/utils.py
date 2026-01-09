@@ -32,11 +32,13 @@ def get_data_loaders(data_dir, batch_size=32, image_size=224):
 
     data_transforms = {
         'train': transforms.Compose([
-            transforms.RandomResizedCrop(image_size),
-            transforms.RandomHorizontalFlip(p=0.1),
+            # scale=(0.4, 1.0) prevents extreme close-ups (zoom).
+            # Previously (default 0.08) the model often only saw background -> Underfitting.
+            transforms.RandomResizedCrop(image_size, scale=(0.4, 1.0)), 
+            transforms.RandomHorizontalFlip(p=0.5), # Standard 0.5 instead of 0.1
             transforms.RandomVerticalFlip(p=0.1),
-            transforms.RandomRotation(8),
-            transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),
+            transforms.RandomRotation(15), # Slightly more rotation
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]),
@@ -82,8 +84,21 @@ def save_model(model, path):
     print(f"Model successfully saved to: {path}")
 
 def load_model(model, path, device):
-    """Loads a saved model state dictionary."""
-    model.load_state_dict(torch.load(path, map_location=device))
+    """Loads a saved model state dictionary or full model object."""
+    checkpoint = torch.load(path, map_location=device, weights_only=False)
+    
+    # Checkpoint is the full model (object) - Legacy Fix
+    if isinstance(checkpoint, torch.nn.Module):
+        print("Info: Loaded full model object. Extracting state_dict...")
+        model.load_state_dict(checkpoint.state_dict())
+    
+    # Checkpoint is only weights (Standard)
+    elif isinstance(checkpoint, dict):
+        model.load_state_dict(checkpoint)
+        
+    else:
+        raise ValueError(f"Unsupported checkpoint format: {type(checkpoint)}")
+        
     return model
 
 def plot_training_history(history, save_dir='plots'):
