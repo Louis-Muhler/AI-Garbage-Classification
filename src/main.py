@@ -1,67 +1,262 @@
+import argparse
+import os
 import torch
 import torch.nn as nn
-from utils import get_data_loaders, save_model, load_model
-from model import SimpleGarbageCNN
-from train import train_model
-from utils import plot_training_history
+import torch.optim as optim
+import matplotlib.pyplot as plt
+import json
+from datetime import datetime
 
-# --- CONFIGURATION (Adjust everything here) ---
-DATA_DIR = 'data_split'
-BATCH_SIZE = 32
-LEARNING_RATE = 0.001 #
-EPOCHS = 100
-IMAGE_SIZE = 128
-MODEL_SAVE_PATH = 'models/best_model.pth'
-RESUME_TRAINING = False
-# ----------------------------------------------
+# Import from the unified, updated modules
+from train import train_model
+from model import get_model
+from utils import (
+    get_data_loaders, 
+    split_data, 
+    collect_examples, 
+    plot_examples, 
+    ensure_dir, 
+    plot_training_history, 
+    save_history, 
+    load_history, 
+    save_checkpoint
+)
 
 def main():
-    # 1. Setup Device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # ---------------------------------------------------------
+    # CLI Arguments Setup
+    # ---------------------------------------------------------
+    parser = argparse.ArgumentParser(description='Unified AI Garbage Classification Pipeline')
+    
+    # Modes
+    parser.add_argument('--mode', choices=['train', 'plot_history', 'plot_examples', 'eval', 'split'], default='train', 
+                        help='Execution mode: train model, plot existing history, visualize examples, evaluate, or split data.')
+    
+    # Model Architecture
+    parser.add_argument('--model', choices=['logistic', 'simple_cnn', 'custom_resnet', 'resnet18', 'resnet50', 'efficientnet_b0'], 
+                        default='custom_resnet', 
+                        help='Model architecture to use. "custom_resnet" is the optimized ResNet implementation.')
+    
+    # Data Paths
+    parser.add_argument('--data_dir', default='data_split', help='Directory containing the split dataset (train/val/test)')
+    parser.add_argument('--input', default='data', help='Raw input data folder used by split mode')
+    
+    # Hyperparameters
+    parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training and evaluation')
+    parser.add_argument('--img_size', type=int, default=128, help='Input image resolution (e.g. 128x128)')
+    parser.add_argument('--epochs', type=int, default=50, help='Maximum number of training epochs')
+    parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate')
+    
+    # Advanced Training Options (New Functionalities)
+    parser.add_argument('--patience', type=int, default=10, help='Early stopping patience (epochs without improvement)')
+    parser.add_argument('--num_workers', type=int, default=4, help='Number of data loader workers')
+    parser.add_argument('--pin_memory', action='store_true', help='Pin memory for faster data transfer to CUDA')
+    
+    # Transfer Learning Options
+    parser.add_argument('--dropout', type=float, default=0.5, help='Dropout rate for transfer learning models')
+    parser.add_argument('--unfreeze', action='store_true', help='Unfreeze backbone layers (fine-tuning)')
+    parser.add_argument('--label_smoothing', type=float, default=0.0, help='Label smoothing for CrossEntropyLoss')
+
+    # Output / Visualization
+    parser.add_argument('--checkpoint', default='checkpoint.pth', help='Filename for model checkpoint')
+    parser.add_argument('--history', default='history.json', help='Filename for training history')
+    parser.add_argument('--num_correct', type=int, default=5, help='Number of correct examples to plot')
+    parser.add_argument('--num_incorrect', type=int, default=5, help='Number of incorrect examples to plot')
+
+    args = parser.parse_args()
+
+    # ---------------------------------------------------------
+    # Setup Paths and Device
+    # ---------------------------------------------------------
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_dir = os.path.join('models', args.model, timestamp)
+    
+    # If not training, we might look for existing files, but we define paths mostly for output here.
+    if args.mode == 'train':
+        ensure_dir(model_dir)
+        checkpoint_path = os.path.join(model_dir, 'checkpoint.pth')
+        # Changed default to .json in args, but keeping flexible
+        history_path = os.path.join(model_dir, 'history.json')
+        plot_path = os.path.join(model_dir, 'training_results.png')
+        report_path = os.path.join(model_dir, 'report.txt')
+        
+        # Save run arguments for reproducibility
+        with open(os.path.join(model_dir, 'args.json'), 'w') as f:
+            json.dump(vars(args), f, indent=4)
+
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
-    # 4. Define Loss and Optimizer
-    loaders, class_names = get_data_loaders(DATA_DIR, BATCH_SIZE, IMAGE_SIZE)
-    num_classes = len(class_names)
-    print(f"Classes found: {class_names}")
+    # Input dim for linear models (flat size)
+    input_dim = 3 * args.img_size * args.img_size
 
-    # 3. Initialize Model
-    model = SimpleGarbageCNN(num_classes=num_classes)
-    if RESUME_TRAINING:
-        print(f"Loading weights from {MODEL_SAVE_PATH} to continue training...")
-        try:
-            model = load_model(model, MODEL_SAVE_PATH, device)
-            print("Successfully loaded model weights.")
-        except Exception as e:
-            print(f"Could not load model: {e}")
-            print("Starting from scratch...")
+    # ---------------------------------------------------------
+    # Execution Modes
+    # ---------------------------------------------------------
+    if args.mode == 'train':
+        print(f"Starting training for model: {args.model}")
+        print(f"Output directory: {model_dir}")
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    
-    # Scheduler: Reduce LR on Plateau
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.1, patience=5
-    )
+        # Ensure data exists
+        if not os.path.exists(args.data_dir):
+            if os.path.exists(args.input):
+                print(f"Data directory '{args.data_dir}' not found. Generating split from '{args.input}'...")
+                split_data(args.input, args.data_dir)
+            else:
+                 raise FileNotFoundError(f"Input data directory '{args.input}' not found. Please provide valid input data.")
 
-    # 5. Start Training
-    print(f"\n--- STARTING TRAINING: {IMAGE_SIZE}x{IMAGE_SIZE} for {EPOCHS} Epochs ---")
-    
-    model, history = train_model(
-        model, loaders, criterion, optimizer, 
-        EPOCHS, device, 
-        scheduler=scheduler, patience=10,
-        checkpoint_path=MODEL_SAVE_PATH
-    )
+        # Data Loading
+        train_loader, val_loader, test_loader, classes = get_data_loaders(
+            args.data_dir,
+            batch_size=args.batch_size,
+            img_size=args.img_size,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_memory
+        )
+        num_classes = len(classes)
 
-    # 6. Visualization
-    plot_training_history(history, save_dir='plots')
+        # Model Initialization
+        freeze_backbone = not args.unfreeze
+        model = get_model(
+            args.model,
+            input_dim,
+            num_classes,
+            img_size=args.img_size,
+            dropout=args.dropout,
+            freeze_backbone=freeze_backbone
+        ).to(device)
 
-    # 7. Save Final Model (Best model is already saved during training via checkpoint_path)
-    # But we can save the final state as well if we want, or just rely on 'best'.
-    # train_model returns the best state_dict loaded model, so we can save it again to be sure.
-    save_model(model, MODEL_SAVE_PATH)
-    print(f"Best Model saved to {MODEL_SAVE_PATH}")
+        # Optimization Setup
+        criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+        optimizer = optim.Adam(model.parameters(), lr=args.lr)
+        
+        # Learning Rate Scheduler
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.1, patience=5
+        )
 
-if __name__ == "__main__":
+        # Training Loop
+        dataloaders = {'train': train_loader, 'val': val_loader}
+        best_model, history = train_model(
+            model, 
+            dataloaders, 
+            criterion, 
+            optimizer, 
+            num_epochs=args.epochs, 
+            device=device,
+            scheduler=scheduler,
+            patience=args.patience,
+            checkpoint_path=checkpoint_path
+        )
+
+        # Persist Final Results
+        # best_model is already the state_dict? No, train_model usually returns the model object.
+        # Let's assume it returns model. We save state_dict for cleanliness.
+        # Check train.py later if needed, but standard practice:
+        save_checkpoint(best_model.state_dict(), checkpoint_path)
+        
+        # Convert tensor values in history to floats for JSON serialization if necessary
+        # But our utils.save_history just dumps. train_model history usually has floats.
+        # If train.py returns tensors in history, json dump will fail. 
+        # For safety, let's ensure it's serializable.
+        history_serializable = {k: [float((v.cpu().item() if torch.is_tensor(v) else v)) for v in vals] for k, vals in history.items()}
+        save_history(history_serializable, history_path)
+        print(f"Saved final best checkpoint to {checkpoint_path}")
+
+        # Plot and Save Results
+        plot_training_history(history_serializable, save_path=plot_path)
+        print(f"Saved training plot to {plot_path}")
+
+        # Generate Report
+        with open(report_path, 'w') as f:
+            f.write(f"Model: {args.model}\n")
+            f.write(f"Date: {timestamp}\n")
+            f.write(f"Epochs: {args.epochs}\n")
+            f.write(f"Best Val Loss: {min(history_serializable['val_loss']):.4f}\n")
+            f.write(f"Best Val Acc: {max(history_serializable['val_acc']):.4f}\n")
+
+        # Example Predictions (Visualization)
+        print("Collecting example predictions...")
+        correct, incorrect = collect_examples(
+            best_model, val_loader,
+            num_correct=args.num_correct,
+            num_incorrect=args.num_incorrect,
+            device=device
+        )
+        example_plot_path = os.path.join(model_dir, 'example_predictions.png')
+        plot_examples(correct, incorrect, classes, out_path=example_plot_path)
+        print(f"Saved example predictions to {example_plot_path}")
+
+    elif args.mode == 'plot_history':
+        if os.path.exists(args.history):
+            history = load_history(args.history)
+            plot_training_history(history)
+        else:
+            print(f"No history found at {args.history}")
+
+    elif args.mode == 'plot_examples':
+        data_loader_args = dict(batch_size=args.batch_size, img_size=args.img_size, num_workers=args.num_workers) if hasattr(args, 'num_workers') else dict(batch_size=args.batch_size, img_size=args.img_size)
+        
+        train_loader, val_loader, test_loader, classes = get_data_loaders(args.data_dir, **data_loader_args)
+        num_classes = len(classes)
+
+        input_dim = 3 * args.img_size * args.img_size
+        freeze_backbone = not args.unfreeze
+        model = get_model(
+            args.model,
+            input_dim,
+            num_classes,
+            img_size=args.img_size,
+            dropout=args.dropout,
+            freeze_backbone=freeze_backbone
+        ).to(device)
+
+        if os.path.exists(args.checkpoint):
+            model.load_state_dict(torch.load(args.checkpoint, map_location=device))
+            print(f"Loaded checkpoint from {args.checkpoint}")
+
+            correct, incorrect = collect_examples(model, val_loader,
+                                                num_correct=args.num_correct,
+                                                num_incorrect=args.num_incorrect,
+                                                device=device)
+            plot_examples(correct, incorrect, classes)
+        else:
+            print(f"Checkpoint not found at {args.checkpoint}")
+
+    elif args.mode == 'eval':
+        # Same here
+        train_loader, val_loader, test_loader, classes = get_data_loaders(args.data_dir, batch_size=args.batch_size, img_size=args.img_size)
+        num_classes = len(classes)
+
+        model = get_model(
+            args.model,
+            input_dim,
+            num_classes,
+            img_size=args.img_size
+        ).to(device)
+
+        if os.path.exists(args.checkpoint):
+            model.load_state_dict(torch.load(args.checkpoint, map_location=device))
+            model.eval()
+
+            correct = 0
+            total = 0
+            with torch.no_grad():
+                for images, labels in test_loader:
+                    images = images.to(device)
+                    labels = labels.to(device)
+                    outputs = model(images)
+                    _, predicted = torch.max(outputs.data, 1)
+                    total += labels.size(0)
+                    correct += (predicted == labels).sum().item()
+
+            print(f'Accuracy on test set: {100 * correct / total:.2f}%')
+        else:
+            print(f"Checkpoint not found at {args.checkpoint}")
+
+    elif args.mode == 'split':
+        split_data(args.input, args.data_dir)
+
+
+if __name__ == '__main__':
     main()
