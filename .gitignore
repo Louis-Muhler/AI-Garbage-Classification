@@ -1,13 +1,10 @@
-# Data and split results
-data/
-
-
 # Python bytecode and cache
 **/__pycache__/
 *.pyc
 
+# Data
+data/
+
 # Model checkpoints and weights
 models/
 
-# Generated plots and visualizations
-plots/
