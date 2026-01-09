@@ -1,84 +1,117 @@
 import torch
+import torch.nn as nn
+import torch.optim as optim
 import time
 import copy
+import os
 
-def train_model(model, criterion, optimizer, dataloaders, device, num_epochs=10):
-    since = time.time()
+def train_model(model, loaders, criterion, optimizer, num_epochs, device, scheduler=None, patience=10, checkpoint_path=None):
+    """
+    Training loop with:
+    - ReduceLROnPlateau (via scheduler)
+    - Early Stopping
+    - Best Model Saving (returns the best model)
+    """
+    start_time_total = time.time()
     
-    # Save best model weights for later
+    # Best Model Tracking
     best_model_wts = copy.deepcopy(model.state_dict())
-    best_acc = 0.0
-
-    # Lists to record metrics for documentation/plotting
+    best_loss = float('inf')
+    epochs_no_improve = 0 # Counter for Early Stopping
+    
     history = {'train_loss': [], 'val_loss': [], 'train_acc': [], 'val_acc': []}
 
-    # Optional: use a scheduler if optimizer is passed, but maybe adding one here from snippet
-    # The snippet used ExponentialLR. Let's add it if not present, but usually passed in.
-    # To minimize logic changes, I'll stick to basic training but add the scheduler from the snippet `train.py`.
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
+    model.to(device)
 
     for epoch in range(num_epochs):
-        print(f'Epoch {epoch}/{num_epochs - 1}')
-        print('-' * 10)
-
-        # Each epoch has a training and a validation phase
+        epoch_start_time = time.time()
+        print(f"\nEpoch {epoch+1}/{num_epochs}")
+        print("-" * 20)
+        
+        # Each epoch has a training and validation phase
         for phase in ['train', 'val']:
             if phase == 'train':
-                model.train()  # set model to training mode
+                model.train()
+                # LR Scheduler Step (if not ReduceLROnPlateau, it comes after val)
             else:
-                model.eval()   # set model to evaluation mode
+                model.eval()
 
             running_loss = 0.0
-            # Initialize as tensor to ensure .double() works later
-            running_corrects = torch.tensor(0, device=device)
+            running_corrects = 0
+            
+            # Number of batches for progress display
+            dataset_size = len(loaders[phase].dataset)
+            num_batches = len(loaders[phase])
 
-            # Iterate over data
-            for inputs, labels in dataloaders[phase]:
+            for i, (inputs, labels) in enumerate(loaders[phase]):
                 inputs = inputs.to(device)
                 labels = labels.to(device)
 
-                # zero the parameter gradients
                 optimizer.zero_grad()
 
-                # Forward pass
                 with torch.set_grad_enabled(phase == 'train'):
                     outputs = model(inputs)
                     _, preds = torch.max(outputs, 1)
                     loss = criterion(outputs, labels)
 
-                    # Backward pass + optimization only in training phase
                     if phase == 'train':
                         loss.backward()
                         optimizer.step()
 
-                # compute statistics
                 running_loss += loss.item() * inputs.size(0)
                 running_corrects += torch.sum(preds == labels.data)
+
+            epoch_loss = running_loss / dataset_size
+            epoch_acc = running_corrects.double() / dataset_size
+
+            print(f"{phase.capitalize()} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}")
             
-            epoch_loss = running_loss / len(dataloaders[phase].dataset)
-            # Fix potential type error if running_corrects is not a tensor initially (though it is here)
-            epoch_acc = running_corrects.double() / len(dataloaders[phase].dataset)
+            # History speichern
+            if phase == 'train':
+                history['train_loss'].append(epoch_loss)
+                history['train_acc'].append(epoch_acc.item())
+            else:
+                history['val_loss'].append(epoch_loss)
+                history['val_acc'].append(epoch_acc.item())
+                
+                # --- Scheduler Step (ReduceLROnPlateau) ---
+                if scheduler is not None:
+                     # Check if scheduler is ReduceLROnPlateau (needs metric)
+                    if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                        scheduler.step(epoch_loss)
+                        curr_lr = optimizer.param_groups[0]['lr']
+                        print(f"Current LR: {curr_lr}")
+                    else:
+                        scheduler.step()
 
-            print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
-            
-            # save history for later plotting
-            history[f'{phase}_loss'].append(epoch_loss)
-            history[f'{phase}_acc'].append(epoch_acc.item())
+                # --- Best Model Saving & Early Stopping ---
+                if epoch_loss < best_loss:
+                    best_loss = epoch_loss
+                    best_model_wts = copy.deepcopy(model.state_dict())
+                    epochs_no_improve = 0
+                    print(f"New Best Val Loss: {best_loss:.4f}")
+                    # Optional: Save checkpoint
+                    if checkpoint_path:
+                        torch.save(model.state_dict(), checkpoint_path) # Saves weights only
+                else:
+                    epochs_no_improve += 1
+                    print(f"No improvement for {epochs_no_improve}/{patience} epochs.")
 
-            # save model weights if this is the best validation accuracy so far
-            if phase == 'val' and epoch_acc > best_acc:
-                best_acc = epoch_acc
-                best_model_wts = copy.deepcopy(model.state_dict())
+        epoch_time = time.time() - epoch_start_time
+        print(f"Epoch Time: {epoch_time:.0f}s")
 
-        # Step scheduler
-        scheduler.step()
-        
-        print()
+        # Early Stopping Check
+        if epochs_no_improve >= patience:
+            print(f"\nEarly Stopping triggered after {epoch+1} epochs!")
+            break
 
-    time_elapsed = time.time() - since
-    print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s')
-    print(f'Best val Acc: {best_acc:4f}')
-
-    # load best model weights and return
+    # Load best weights
+    print(f"\nTraining complete. Best Val Loss: {best_loss:.4f}")
     model.load_state_dict(best_model_wts)
+    
+    # Calculate and print total training time
+    total_time = time.time() - start_time_total
+    print(f"Total training time: {total_time // 60:.0f}m {total_time % 60:.0f}s")
+    print(f"{'='*20}")
+
     return model, history

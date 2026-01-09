@@ -1,262 +1,67 @@
-import argparse
-import os
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import matplotlib.pyplot as plt
-import json
-from datetime import datetime
-
+from utils import get_data_loaders, save_model, load_model
+from model import SimpleGarbageCNN
 from train import train_model
-from data_loader import get_data_loaders
-from model import get_model
-from plot_examples import collect_examples, plot_examples
-from prepare_data import split_data
+from utils import plot_training_history
 
-
-def ensure_dir(path):
-    os.makedirs(path, exist_ok=True)
-
-
-def plot_training_history(history, out_path=None):
-    epochs = range(1, len(history['train_loss']) + 1)
-    plt.figure(figsize=(12, 5))
-
-    plt.subplot(1, 2, 1)
-    plt.plot(epochs, history['train_loss'], 'bo-', label='Training Loss')
-    plt.plot(epochs, history['val_loss'], 'ro-', label='Validation Loss')
-    plt.title('Trainings- und Validierungs-Loss')
-    plt.xlabel('Epochen')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-
-    plt.subplot(1, 2, 2)
-    plt.plot(epochs, history['train_acc'], 'bo-', label='Training Acc')
-    plt.plot(epochs, history['val_acc'], 'ro-', label='Validation Acc')
-    plt.title('Trainings- und Validierungs-Accuracy')
-    plt.xlabel('Epochen')
-    plt.ylabel('Genauigkeit')
-    plt.legend()
-    plt.grid(True)
-
-    plt.tight_layout()
-    if out_path:
-        plt.savefig(out_path)
-    plt.show()
-
-
-def save_checkpoint(model, path):
-    ensure_dir(os.path.dirname(path) or '.')
-    torch.save(model.state_dict(), path)
-
-
-def save_history(history, path):
-    ensure_dir(os.path.dirname(path) or '.')
-    torch.save(history, path)
-    
-    # Save as JSON for readability
-    json_path = str(path).replace('.pt', '.json')
-    history_serializable = {k: [float(v) for v in vals] for k, vals in history.items()}
-    with open(json_path, 'w') as f:
-        json.dump(history_serializable, f, indent=4)
-
-
-def load_history(path):
-    return torch.load(path)
-
+# --- CONFIGURATION (Adjust everything here) ---
+DATA_DIR = 'data_split'
+BATCH_SIZE = 32
+LEARNING_RATE = 0.001 #
+EPOCHS = 100
+IMAGE_SIZE = 128
+MODEL_SAVE_PATH = 'models/best_model.pth'
+RESUME_TRAINING = False
+# ----------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description='Train/evaluate/plot pipeline controller')
-    parser.add_argument('--mode', choices=['train', 'plot_history', 'plot_examples', 'eval', 'split'], default='train')
-    parser.add_argument('--model', choices=['logistic', 'linear', 'cnn', 'slim_cnn', 'resnet18', 'resnet50', 'efficientnet_b0'], default='slim_cnn')
-    parser.add_argument('--data_dir', default='data_split')
-    parser.add_argument('--input', default='data', help='Input data folder used by split mode')
-    parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--img_size', type=int, default=128)
-    parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--lr', type=float, default=0.001)
-    parser.add_argument('--num_correct', type=int, default=5)
-    parser.add_argument('--num_incorrect', type=int, default=5)
-    
-    # New args from colleague's version
-    parser.add_argument('--num_workers', type=int, default=4, help='Number of data loader workers')
-    parser.add_argument('--pin_memory', action='store_true', help='Pin memory for faster data transfer to CUDA')
-    
-    # Arguments for transfer learning
-    parser.add_argument('--dropout', type=float, default=0.5, help='Dropout rate for transfer learning models')
-    parser.add_argument('--unfreeze', action='store_true', help='Unfreeze backbone layers (default: frozen)')
-    parser.add_argument('--label_smoothing', type=float, default=0.0, help='Label smoothing for CrossEntropyLoss (default: 0.0)')
-
-    parser.add_argument('--checkpoint', default='checkpoint.pth', help='Path to model checkpoint')
-    parser.add_argument('--history', default='history.pt', help='Path to training history')
-    args = parser.parse_args()
-
-    # Create model specific directory
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_dir = os.path.join('models', args.model, timestamp)
-    ensure_dir(model_dir)
-
-    checkpoint_path = os.path.join(model_dir, 'checkpoint.pth')
-    history_path = os.path.join(model_dir, 'history.pt')
-    plot_path = os.path.join(model_dir, 'training_results.png')
-    report_path = os.path.join(model_dir, 'report.txt')
-
-    # Save run arguments
-    with open(os.path.join(model_dir, 'args.json'), 'w') as f:
-        json.dump(vars(args), f, indent=4)
-
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    # 1. Setup Device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+
+    # 4. Define Loss and Optimizer
+    loaders, class_names = get_data_loaders(DATA_DIR, BATCH_SIZE, IMAGE_SIZE)
+    num_classes = len(class_names)
+    print(f"Classes found: {class_names}")
+
+    # 3. Initialize Model
+    model = SimpleGarbageCNN(num_classes=num_classes)
+    if RESUME_TRAINING:
+        print(f"Loading weights from {MODEL_SAVE_PATH} to continue training...")
+        try:
+            model = load_model(model, MODEL_SAVE_PATH, device)
+            print("Successfully loaded model weights.")
+        except Exception as e:
+            print(f"Could not load model: {e}")
+            print("Starting from scratch...")
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     
-    # Input dim for linear models (flat size)
-    input_dim = 3 * args.img_size * args.img_size
+    # Scheduler: Reduce LR on Plateau
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.1, patience=5
+    )
 
-    if args.mode == 'train':
-        print(f"Starting training for model: {args.model}")
-        print(f"Output directory: {model_dir}")
-        
-        # Check if data_dir exists, if not, try to prepare data
-        if not os.path.exists(args.data_dir):
-            if os.path.exists(args.input):
-                print(f"Data directory '{args.data_dir}' not found. Generating split from '{args.input}'...")
-                # Avoid splitting artifacts (train/val/test folders inside data)
-                # We can't easily filter them unless we clean them up, but we warn:
-                if any(os.path.exists(os.path.join(args.input, x)) for x in ['train', 'val', 'test']):
-                    print("Warning: Input directory contains 'train', 'val', or 'test' folders. "
-                          "This might affect the split. Ensure 'data' only contains class folders.")
-                
-                split_data(args.input, args.data_dir)
-            else:
-                 raise FileNotFoundError(f"Input data directory '{args.input}' not found. Cannot create split.")
+    # 5. Start Training
+    print(f"\n--- STARTING TRAINING: {IMAGE_SIZE}x{IMAGE_SIZE} for {EPOCHS} Epochs ---")
+    
+    model, history = train_model(
+        model, loaders, criterion, optimizer, 
+        EPOCHS, device, 
+        scheduler=scheduler, patience=10,
+        checkpoint_path=MODEL_SAVE_PATH
+    )
 
-        # Pass new optimize args
-        train_loader, val_loader, test_loader, classes = get_data_loaders(
-            args.data_dir, 
-            batch_size=args.batch_size, 
-            img_size=args.img_size,
-            num_workers=args.num_workers,
-            pin_memory=args.pin_memory
-        )
-        num_classes = len(classes)
-        
-        # Pass transfer learning args
-        freeze_backbone = not args.unfreeze
-        model = get_model(
-            args.model, 
-            input_dim, 
-            num_classes, 
-            img_size=args.img_size, 
-            dropout=args.dropout, 
-            freeze_backbone=freeze_backbone
-        ).to(device)
+    # 6. Visualization
+    plot_training_history(history, save_dir='plots')
 
-        criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
-        optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    # 7. Save Final Model (Best model is already saved during training via checkpoint_path)
+    # But we can save the final state as well if we want, or just rely on 'best'.
+    # train_model returns the best state_dict loaded model, so we can save it again to be sure.
+    save_model(model, MODEL_SAVE_PATH)
+    print(f"Best Model saved to {MODEL_SAVE_PATH}")
 
-        dataloaders = {'train': train_loader, 'val': val_loader}
-        best_model, history = train_model(model, criterion, optimizer, dataloaders, device, num_epochs=args.epochs)
-
-        # persist
-        save_checkpoint(best_model, checkpoint_path)
-        save_history(history, history_path)
-        print(f"Saved checkpoint to {checkpoint_path} and history to {history_path}")
-
-        # Save training results (plot)
-        plot_training_history(history, out_path=plot_path)
-        print(f"Saved plot to {plot_path}")
-        
-        # Save simple report
-        with open(report_path, 'w') as f:
-            f.write(f"Model: {args.model}\n")
-            f.write(f"Date: {timestamp}\n")
-            f.write(f"Epochs: {args.epochs}\n")
-            f.write(f"Final Train Loss: {history['train_loss'][-1]:.4f}\n")
-            f.write(f"Final Val Loss: {history['val_loss'][-1]:.4f}\n")
-            f.write(f"Final Train Acc: {history['train_acc'][-1]:.4f}\n")
-            f.write(f"Final Val Acc: {history['val_acc'][-1]:.4f}\n")
-
-        # Automatically collect and plot examples
-        print("Collecting example predictions...")
-        correct, incorrect = collect_examples(best_model, val_loader, 
-                                            num_correct=args.num_correct, 
-                                            num_incorrect=args.num_incorrect, 
-                                            device=device)
-        example_plot_path = os.path.join(model_dir, 'example_predictions.png')
-        plot_examples(correct, incorrect, classes, out_path=example_plot_path)
-        print(f"Saved example predictions to {example_plot_path}")
-
-    elif args.mode == 'plot_history':
-        if os.path.exists(args.history):
-            history = load_history(args.history)
-            plot_training_history(history)
-        else:
-            print(f"No history found at {args.history}")
-
-    elif args.mode == 'plot_examples':
-        train_loader, val_loader, test_loader, classes = get_data_loaders(args.data_dir, batch_size=args.batch_size, img_size=args.img_size)
-        num_classes = len(classes)
-        
-        # Consistent model creation
-        freeze_backbone = not args.unfreeze
-        model = get_model(
-            args.model, 
-            input_dim, 
-            num_classes, 
-            img_size=args.img_size, 
-            dropout=args.dropout, 
-            freeze_backbone=freeze_backbone
-        ).to(device)
-        
-        if os.path.exists(args.checkpoint):
-            model.load_state_dict(torch.load(args.checkpoint, map_location=device))
-            print(f"Loaded checkpoint from {args.checkpoint}")
-            
-            correct, incorrect = collect_examples(model, val_loader, 
-                                                num_correct=args.num_correct, 
-                                                num_incorrect=args.num_incorrect, 
-                                                device=device)
-            plot_examples(correct, incorrect, classes) 
-        else:
-            print(f"Checkpoint not found at {args.checkpoint}")
-
-    elif args.mode == 'eval':
-        train_loader, val_loader, test_loader, classes = get_data_loaders(args.data_dir, batch_size=args.batch_size, img_size=args.img_size)
-        num_classes = len(classes)
-        
-        # Consistent model creation
-        freeze_backbone = not args.unfreeze
-        model = get_model(
-            args.model, 
-            input_dim, 
-            num_classes, 
-            img_size=args.img_size, 
-            dropout=args.dropout, 
-            freeze_backbone=freeze_backbone
-        ).to(device)
-        
-        if os.path.exists(args.checkpoint):
-            model.load_state_dict(torch.load(args.checkpoint, map_location=device))
-            model.eval()
-            
-            correct = 0
-            total = 0
-            with torch.no_grad():
-                for images, labels in test_loader:
-                    images = images.to(device)
-                    labels = labels.to(device)
-                    outputs = model(images)
-                    _, predicted = torch.max(outputs.data, 1)
-                    total += labels.size(0)
-                    correct += (predicted == labels).sum().item()
-            
-            print(f'Accuracy of the network on test images: {100 * correct / total:.2f}%')
-        else:
-            print(f"Checkpoint not found at {args.checkpoint}")
-
-    elif args.mode == 'split':
-        split_data(args.input, args.data_dir)
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

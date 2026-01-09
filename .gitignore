@@ -1,3 +1,13 @@
-src/__pycache__/
-data_split/
+# Data and split results
+data/
+
+
+# Python bytecode and cache
+**/__pycache__/
+*.pyc
+
+# Model checkpoints and weights
 models/
+
+# Generated plots and visualizations
+plots/
