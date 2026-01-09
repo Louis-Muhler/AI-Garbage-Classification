@@ -130,3 +130,6 @@ def plot_training_history(history, save_dir='plots'):
     plt.savefig(save_path)
     plt.close()
     print(f"Performance plot saved as: {save_path}")
+
+if __name__ == "__main__":
+    split_garbage_data("data", "data_split")
