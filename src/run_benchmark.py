@@ -65,7 +65,7 @@ def plot_benchmark_results(models):
 
 def run_benchmark():
     # List of models to be trained
-    models = ["logistic", "simple_cnn", "custom_resnet", "resnet18", "resnet50", "efficientnet_b0"]
+    models = ["logistic", "simple_cnn", "custom_resnet", "resnet18", "resnet50", "efficientnet_b0", "mobilenet_v3_large"]
     
     # Number of epochs
     epochs = 80
