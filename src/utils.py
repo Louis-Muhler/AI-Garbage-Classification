@@ -31,7 +31,7 @@ def get_data_loaders(data_dir, batch_size=32, img_size=224, num_workers=4, pin_m
     # Define transforms
     data_transforms = {
         'train': transforms.Compose([
-            # scale=(0.4, 1.0) prevents extreme close-ups (zoom).
+            # RandomResizedCrop with scale=(0.4, 1.0) ensures diversity but avoids excessive zooming that loses context
             transforms.RandomResizedCrop(img_size, scale=(0.4, 1.0)), 
             transforms.RandomHorizontalFlip(p=0.5), 
             transforms.RandomVerticalFlip(p=0.1),

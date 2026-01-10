@@ -172,7 +172,7 @@ class CustomResNet(nn.Module):
 # 3. Model Factory
 # ----------------------------
 
-def build_transfer_model(num_classes: int, model_name: str = "resnet18", dropout: float = 0.5, freeze_backbone: bool = True) -> nn.Module:
+def build_transfer_model(num_classes: int, model_name: str = "resnet18", dropout: float = 0.5, freeze_backbone: bool = False) -> nn.Module:
     """Build a pre-trained model for transfer learning."""
     if model_name == "resnet18":
         weights = models.ResNet18_Weights.IMAGENET1K_V1
@@ -183,6 +183,9 @@ def build_transfer_model(num_classes: int, model_name: str = "resnet18", dropout
     elif model_name == "efficientnet_b0":
         weights = models.EfficientNet_B0_Weights.IMAGENET1K_V1
         model = models.efficientnet_b0(weights=weights)
+    elif model_name == "mobilenet_v3_large":
+        weights = models.MobileNet_V3_Large_Weights.IMAGENET1K_V1
+        model = models.mobilenet_v3_large(weights=weights)
     else:
         raise ValueError(f"Unknown transfer model: {model_name}")
 
@@ -212,6 +215,22 @@ def build_transfer_model(num_classes: int, model_name: str = "resnet18", dropout
                 nn.Linear(num_ftrs, num_classes)
             )
 
+    elif model_name == "mobilenet_v3_large":
+        # MobileNetV3 classifier structure: [0]Linear -> [1]Hardswish -> [2]Dropout -> [3]Linear
+        # We replace the last Linear layer and update defaults
+        classifier = getattr(model, 'classifier', None)
+        if isinstance(classifier, nn.Sequential):
+            # The last layer is the classification head
+            last_layer_idx = len(classifier) - 1
+            if isinstance(classifier[last_layer_idx], nn.Linear):
+                in_features = classifier[last_layer_idx].in_features
+                # Modify the Dropout layer before it if it exists
+                if last_layer_idx > 0 and isinstance(classifier[last_layer_idx-1], nn.Dropout):
+                    classifier[last_layer_idx-1] = nn.Dropout(p=dropout)
+                
+                # Replace the last Linear layer
+                classifier[last_layer_idx] = nn.Linear(in_features, num_classes)
+
     return model
 
 
@@ -226,7 +245,7 @@ def get_model(name: str, input_dim: int, num_classes: int, img_size: int = 128, 
         return SimpleCNN(num_classes=num_classes, in_channels=3)
     elif name == 'custom_resnet':
         return CustomResNet(num_classes=num_classes)
-    elif name in ['resnet18', 'resnet50', 'efficientnet_b0']:
+    elif name in ['resnet18', 'resnet50', 'efficientnet_b0', 'mobilenet_v3_large']:
         return build_transfer_model(num_classes=num_classes, model_name=name, **kwargs)
 
-    raise ValueError(f"Unknown model name: {name}. Supported: logistic, simple_cnn, custom_resnet, resnet18, resnet50, efficientnet_b0")
+    raise ValueError(f"Unknown model name: {name}. Supported: logistic, simple_cnn, custom_resnet, resnet18, resnet50, efficientnet_b0, mobilenet_v3_large")

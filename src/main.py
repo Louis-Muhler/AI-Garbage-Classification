@@ -40,7 +40,7 @@ def main():
                         help='Execution mode: train model, plot existing history, visualize examples, evaluate, or split data.')
     
     # Model Architecture
-    parser.add_argument('--model', choices=['logistic', 'simple_cnn', 'custom_resnet', 'resnet18', 'resnet50', 'efficientnet_b0'], 
+    parser.add_argument('--model', choices=['logistic', 'simple_cnn', 'custom_resnet', 'resnet18', 'resnet50', 'efficientnet_b0', 'mobilenet_v3_large'], 
                         default='custom_resnet', 
                         help='Model architecture to use. "custom_resnet" is the optimized ResNet implementation.')
     
@@ -52,7 +52,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training and evaluation')
     parser.add_argument('--img_size', type=int, default=128, help='Input image resolution (e.g. 128x128)')
     parser.add_argument('--epochs', type=int, default=50, help='Maximum number of training epochs')
-    parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate')
+    parser.add_argument('--lr', type=float, default=0.0001, help='Initial learning rate')
     
     # Advanced Training Options (New Functionalities)
     parser.add_argument('--patience', type=int, default=10, help='Early stopping patience (epochs without improvement)')
@@ -61,8 +61,8 @@ def main():
     
     # Transfer Learning Options
     parser.add_argument('--dropout', type=float, default=0.5, help='Dropout rate for transfer learning models')
-    parser.add_argument('--unfreeze', action='store_true', help='Unfreeze backbone layers (fine-tuning)')
-    parser.add_argument('--label_smoothing', type=float, default=0.0, help='Label smoothing for CrossEntropyLoss')
+    parser.add_argument('--freeze', action='store_true', help='Freeze backbone layers (transfer learning without fine-tuning). Default is to Unfreeze (fine-tune).')
+    parser.add_argument('--label_smoothing', type=float, default=0.15, help='Label smoothing for CrossEntropyLoss')
 
     # Output / Visualization
     parser.add_argument('--checkpoint', default='checkpoint.pth', help='Filename for model checkpoint')
@@ -78,7 +78,7 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_dir = os.path.join('models', args.model, timestamp)
     
-    # If not training, we might look for existing files, but we define paths mostly for output here.
+    # Define output paths for training artifacts
     if args.mode == 'train':
         ensure_dir(model_dir)
         checkpoint_path = os.path.join(model_dir, 'checkpoint.pth')
@@ -123,7 +123,7 @@ def main():
         num_classes = len(classes)
 
         # Model Initialization
-        freeze_backbone = not args.unfreeze
+        freeze_backbone = args.freeze
         model = get_model(
             args.model,
             input_dim,
@@ -157,15 +157,10 @@ def main():
         )
 
         # Persist Final Results
-        # best_model is already the state_dict? No, train_model usually returns the model object.
-        # Let's assume it returns model. We save state_dict for cleanliness.
-        # Check train.py later if needed, but standard practice:
+        # Save the state dictionary of the best model found during training
         save_checkpoint(best_model.state_dict(), checkpoint_path)
         
-        # Convert tensor values in history to floats for JSON serialization if necessary
-        # But our utils.save_history just dumps. train_model history usually has floats.
-        # If train.py returns tensors in history, json dump will fail. 
-        # For safety, let's ensure it's serializable.
+        # Ensure history values are JSON serializable (convert tensors to floats)
         history_serializable = {k: [float((v.cpu().item() if torch.is_tensor(v) else v)) for v in vals] for k, vals in history.items()}
         save_history(history_serializable, history_path)
         print(f"Saved final best checkpoint to {checkpoint_path}")

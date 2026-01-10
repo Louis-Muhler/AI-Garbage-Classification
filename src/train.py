@@ -87,7 +87,7 @@ def train_model(model, loaders, criterion, optimizer, num_epochs, device, schedu
                         # Print generic LR info if possible
                         try:
                             curr_lr = optimizer.param_groups[0]['lr']
-                            print(f"Current LR: {curr_lr}")
+                            # print(f"Current LR: {curr_lr}") # Optional: Uncomment to monitor LR changes
                         except:
                             pass
                     else:
